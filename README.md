@@ -173,6 +173,10 @@ npm run deploy      # deploys the demo Worker
 
 No secrets live in this repository. Keys are stored as Cloudflare secrets.
 
+## Licence
+
+[MIT](LICENSE): free to copy, change and run, including by MeronRG and by other residents.
+
 ---
 
 Simulated data, for a technical proposal. Not operated by or affiliated with MeronRG or Tesla.
