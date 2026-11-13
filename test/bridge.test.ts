@@ -305,6 +305,29 @@ describe("bridge cycle", () => {
     expect(sent).toBe(0);
   });
 
+  it("never re-delivers old sessions when a newer version looks further back", async () => {
+    // State as an earlier version left it: a 2-day look-back, older ids already forgotten.
+    const { store } = fakeStore();
+    const old = session("2026-11-08T18:00:00Z", 2, 29_000); // delivered long ago, id forgotten
+    await store.put("state", {
+      delivered_count: 5,
+      meter_total_wh: 104_000,
+      watermark: new Date(NOW - HOUR).toISOString(),
+      recent: [B.started_at],
+      deliveries: [],
+      last_attempt_at: null,
+      last_success_at: null,
+      last_error: null,
+      consecutive_failures: 0,
+    });
+    let sent = 0;
+    const send = async () => (sent++, new Response(null, { status: 201 }));
+    const state = await runCycle(cfg(), store, NOW, { source: async () => [old, B], send });
+    expect(sent).toBe(0);
+    expect(state.meter_total_wh).toBe(104_000);
+    expect(state.last_error).toBeNull();
+  });
+
   it("waits quietly when REPORT_FROM is still in the future", async () => {
     let asked = 0;
     const state = await runCycle(cfg({ REPORT_FROM: "2027-01-01T00:00:00Z" }), fakeStore().store, NOW, {
@@ -522,6 +545,7 @@ describe("demo page", () => {
       origin: null,
       watermark: null,
       recent: [],
+      recent_since: null,
       pending: null,
       deliveries: [
         {

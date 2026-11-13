@@ -37,7 +37,7 @@ export class BridgeState extends DurableObject<Env> {
   }
 }
 
-const bridge = (env: Env) => env.BRIDGE.get(env.BRIDGE.idFromName("bridge"));
+const bridge = (env: Env) => env.BRIDGE.get(env.BRIDGE.idFromName(env.STATE_NAME || "bridge"));
 
 const SECURITY_HEADERS: Record<string, string> = {
   "cache-control": "no-store",

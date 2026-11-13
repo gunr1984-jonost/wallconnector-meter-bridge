@@ -9,6 +9,8 @@ export interface Config {
   REPORT_FROM?: string;
   /** Optional, comma-separated session start times the owner has decided to leave out. */
   SKIP_SESSIONS?: string;
+  /** Which stored state to use (default "bridge"). Changing it is a deliberate full reset. */
+  STATE_NAME?: string;
 
   // Operator side (live mode)
   MERONRG_API_URL?: string;
@@ -65,6 +67,12 @@ export interface State {
   watermark: string | null;
   /** Start and end of sessions delivered inside the look-back window, to never send one twice. */
   recent: { s: string; e: string }[];
+  /**
+   * `recent` is complete for sessions that ended at or after this moment (null = since origin).
+   * Nothing that ended earlier is ever delivered, so widening the look-back in a later
+   * version cannot send an already-delivered session again.
+   */
+  recent_since: string | null;
   /** A reading that has been sent but not yet confirmed. It is resent unchanged. */
   pending: Reading | null;
   deliveries: Delivery[]; // newest first, capped

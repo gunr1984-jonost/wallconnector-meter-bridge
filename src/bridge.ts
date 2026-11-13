@@ -31,6 +31,7 @@ export const emptyState = (): State => ({
   origin: null,
   watermark: null,
   recent: [],
+  recent_since: null,
   pending: null,
   deliveries: [],
   last_attempt_at: null,
@@ -40,8 +41,11 @@ export const emptyState = (): State => ({
 });
 
 export async function loadState(store: Store): Promise<State> {
-  const state = { ...emptyState(), ...((await store.get<State>(STATE_KEY)) ?? {}) };
-  // Older versions kept only the start time.
+  const stored = await store.get<Partial<State>>(STATE_KEY);
+  const state = { ...emptyState(), ...(stored ?? {}) };
+  // State written by a version that did not record how far back `recent` reaches: assume
+  // only as far as its watermark, so nothing older can be delivered a second time.
+  if (stored && !("recent_since" in stored)) state.recent_since = state.watermark;
   state.recent = (state.recent as unknown[]).map((r) =>
     typeof r === "string" ? { s: r, e: r } : (r as { s: string; e: string }),
   );
@@ -191,7 +195,11 @@ export async function runCycle(
     }
 
     const to = now - SETTLE_MS;
-    const from = Math.max(state.watermark ? Date.parse(state.watermark) - OVERLAP_MS : Date.parse(state.origin), floor);
+    const from = Math.max(
+      state.watermark ? Date.parse(state.watermark) - OVERLAP_MS : Date.parse(state.origin),
+      Date.parse(state.recent_since ?? state.origin), // never further back than `recent` remembers
+      floor,
+    );
 
     if (from < to) {
       const seen = new Set(state.recent.map((r) => r.s));
@@ -224,7 +232,10 @@ export async function runCycle(
         // Everything that ended before `to` is delivered. Forget sessions too old to be listed again.
         state.watermark = iso(to);
         const keepFrom = to - OVERLAP_MS - DAY;
-        state.recent = state.recent.filter((r) => Date.parse(r.e) >= keepFrom);
+        if (keepFrom > Date.parse(state.recent_since ?? state.origin)) {
+          state.recent = state.recent.filter((r) => Date.parse(r.e) >= keepFrom);
+          state.recent_since = iso(keepFrom);
+        }
       }
     }
   } catch (err) {

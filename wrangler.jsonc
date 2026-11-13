@@ -10,6 +10,7 @@
   "vars": {
     "MODE": "demo",
     "CHARGER_ID": "DEMO-WC3-001",
+    "STATE_NAME": "demo-2",
     "TIME_ZONE": "Asia/Jerusalem"
   },
   // State lives in one Durable Object: strongly consistent, one run at a time.

@@ -30,7 +30,8 @@ No secret is in this repository. GitHub secret scanning and push protection are 
   where it stopped.
 - **A reset is visible, not silent.** If the bridge's storage were ever wiped, ids stay the
   same (MeronRG ignores the repeats) but the running total starts again from zero. Agree
-  the new base with MeronRG if that ever happens.
+  the new base with MeronRG if that ever happens. A deliberate reset is a recorded
+  configuration change (`STATE_NAME`), never something a request can trigger.
 - **Half-configured means stopped.** The mode must be exactly `demo` or `live`. Live without
   an operator address, or a misspelt mode, is an error and is treated as private; real
   sessions can never go to the stand-in, and simulated ones can never go to MeronRG.
