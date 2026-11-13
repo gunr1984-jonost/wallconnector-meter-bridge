@@ -73,7 +73,7 @@ No secret is in this repository. GitHub secret scanning and push protection are 
 | `operator answered HTTP 401/403` | Key rejected | Get a new key from MeronRG; `wrangler secret put MERONRG_API_KEY`. Nothing is lost: delivery resumes from the same session. |
 | `operator answered HTTP 4xx` (other) | MeronRG refuses this reading | Compare the message with their API; fix `src/meronrg.ts`. Later sessions wait behind it, in order. If the two sides agree that one session is to be left out, list its start time in `SKIP_SESSIONS`. |
 | `operator answered HTTP 5xx`, or `operator did not answer` | MeronRG is down or unreachable | Nothing. It retries every hour, with the identical message. |
-| `Tesla token refresh failed` | Authorisation expired or withdrawn | Authorise again (GO-LIVE step 2) and set the new `TESLA_REFRESH_TOKEN`. A newly set token replaces the stored one. |
+| `Tesla token refresh failed` (Tesla answers `401 login_required`) | Authorisation expired, was replaced, or the owner reset their Tesla password | Authorise again (GO-LIVE step 2) and set the new `TESLA_REFRESH_TOKEN`. A newly set token replaces the stored one. |
 | `Tesla charge history failed: HTTP 429/5xx` | Tesla is busy or down | Nothing. It retries every hour. |
 | `charger data: ...` | Tesla returned figures that cannot be right; the message names the session | Look at the session in the Tesla app before anything is billed. Delivery waits. To leave that session out and continue, add its start time to `SKIP_SESSIONS` (comma-separated) and deploy. |
 | `MODE must be ...`, `... is not set` | A setting is missing or misspelt | Fix the setting. Nothing was sent. |

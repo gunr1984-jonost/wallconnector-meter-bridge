@@ -14,11 +14,26 @@ Two things have to exist first: the installed charger, and MeronRG's API details
 
 ## 2. Tesla authorisation
 
-1. Authorise once in a browser (authorization-code flow) asking for **only**
-   `openid offline_access energy_device_data`. Do not reuse an authorisation that carries
-   vehicle or command scopes: the bridge must not hold anything that can control a car.
-2. Keep the **refresh token** from that authorisation; it is the `TESLA_REFRESH_TOKEN` seed.
-3. The Worker stores each rotated refresh token itself after that.
+What Tesla requires, with sources, is in [`TESLA.md`](TESLA.md). In short: a developer
+application (client id and secret), its public key hosted on a domain, and one register
+call per region. Then, once:
+
+1. In the developer application, add a redirect address you control (any page that lets
+   you read the `code` from the address bar).
+2. Open the approval page in a browser and sign in as the charger's owner:
+   `https://auth.tesla.com/oauth2/v3/authorize?response_type=code&client_id=<client id>&redirect_uri=<redirect address>&scope=openid%20offline_access%20energy_device_data&state=<any random text>`
+   Ask for **only** these scopes: the bridge must not hold anything that can control a
+   charger or a car.
+3. Exchange the `code` from the redirect for tokens (it expires within minutes):
+   `POST https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token` with
+   `grant_type=authorization_code`, `client_id`, `client_secret`, `code`, `redirect_uri` and
+   `audience=https://fleet-api.prd.eu.vn.cloud.tesla.com`.
+4. Keep the **refresh token** from the answer; it is the `TESLA_REFRESH_TOKEN` seed. The
+   client secret is used only in step 3 and is never given to the bridge.
+5. Confirm the region: `GET /api/1/users/region` with the access token returns the base
+   address to use as `TESLA_API_BASE` (Europe, Middle East and Africa is the default).
+6. The Worker stores each rotated refresh token itself after that. If the developer
+   application is shared with another integration, check that integration still works.
 
 ## 3. MeronRG
 
@@ -87,7 +102,9 @@ These are the assumptions that could not be tested without a charger:
 - [ ] One session's kWh matches the Tesla app.
 - [ ] `meter_total_wh` tracks the charger's own lifetime counter (`energy_wh` at
       `http://<charger address>/api/1/lifetime`, readable from the same network).
-- [ ] Tesla API usage stays inside the account's monthly allowance (one call an hour, about 720 a month).
+- [ ] Tesla API usage stays inside the account's monthly allowance (one call an hour, about
+      720 a month, at most about $1.50 if billed as data requests; the $10 monthly discount
+      is shared with everything else on the same developer account).
 - [ ] `/health` answers `ok`, and a test alert arrives: `POST /test-alert` with the status
       token answers `{"sent":true}` and the notice shows up at the alert address.
 

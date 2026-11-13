@@ -111,7 +111,8 @@ A different charger brand changes only the part that reads the charger
 ## Where the figures come from
 
 - Energy is measured by the Wall Connector's built-in meter and read from Tesla's own
-  service (the Fleet API "charge history" for the charger).
+  service (the Fleet API "charge history" for the charger). Tesla documents this use;
+  what it requires, checked against Tesla's documentation, is in [`docs/TESLA.md`](docs/TESLA.md).
 - The Wall Connector's meter is not a certified billing meter. If MeronRG requires one, a
   certified sub-meter on the charger's supply can feed the same message with no change on
   MeronRG's side.
