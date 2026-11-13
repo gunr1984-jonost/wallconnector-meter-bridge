@@ -1,0 +1,5 @@
+# Copy to .dev.vars for local runs. Never commit real values: they live in
+# Cloudflare secrets (wrangler secret put ...) and in the owner's password manager.
+# MERONRG_API_KEY=
+# TESLA_REFRESH_TOKEN=
+# STATUS_TOKEN=

@@ -1,0 +1,18 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "wc-meter-bridge",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  "triggers": { "crons": ["7 * * * *"] },
+  "observability": { "enabled": true },
+
+  // Demo: simulated charger, built-in stand-in for the operator's API. No secrets.
+  "vars": {
+    "MODE": "demo",
+    "CHARGER_ID": "DEMO-WC3-001",
+    "TIME_ZONE": "Asia/Jerusalem"
+  },
+  "kv_namespaces": [{ "binding": "STATE", "id": "a33d9fb54bfe4108afe0c0525efaa0ac" }]
+
+  // Going live is a second Worker with its own storage and secrets: see docs/GO-LIVE.md.
+}

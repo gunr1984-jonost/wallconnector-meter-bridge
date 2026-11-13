@@ -1,0 +1,77 @@
+openapi: 3.0.3
+info:
+  title: Charging session readings (proposal)
+  version: 0.1.0
+  description: >
+    Proposed receiving endpoint for charging sessions measured by a resident's own
+    Tesla Wall Connector Gen 3. One request per completed session. This is a proposal:
+    the sender adapts to whatever interface the operator already has.
+servers:
+  - url: https://wc-meter-bridge.gunr1984.workers.dev/mock/meronrg
+    description: Stand-in receiver in the demo (key "demo-key"; requests are checked, not stored)
+paths:
+  /v1/readings:
+    post:
+      summary: Report one completed charging session
+      security:
+        - bearerKey: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: Same value as reading_id. A retry repeats it.
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Reading" }
+            example:
+              reading_id: WC3-0001-000005
+              charger_id: WC3-0001
+              session:
+                started_at: "2026-11-12T17:00:00.000Z"
+                ended_at: "2026-11-12T19:03:00.000Z"
+                energy_wh: 15785
+              meter_total_wh: 104397
+              source: tesla-fleet-api
+      responses:
+        "201":
+          description: Accepted.
+        "200":
+          description: Already received (same reading_id). Treated as accepted.
+        "401":
+          description: Missing or wrong key. The sender retries hourly.
+        "422":
+          description: A field is missing or malformed. The sender retries hourly and flags the error.
+components:
+  securitySchemes:
+    bearerKey:
+      type: http
+      scheme: bearer
+      description: Key issued by the operator.
+  schemas:
+    Reading:
+      type: object
+      required: [reading_id, charger_id, session, meter_total_wh]
+      properties:
+        reading_id:
+          type: string
+          description: Unique per session; stable across retries.
+        charger_id:
+          type: string
+          description: Identifier the operator assigns to this charger or customer.
+        session:
+          type: object
+          required: [started_at, ended_at, energy_wh]
+          properties:
+            started_at: { type: string, format: date-time, description: UTC }
+            ended_at: { type: string, format: date-time, description: UTC }
+            energy_wh: { type: integer, minimum: 0, description: Energy delivered in the session, watt-hours }
+        meter_total_wh:
+          type: integer
+          minimum: 0
+          description: Running total of all reported sessions, this one included, watt-hours.
+        source:
+          type: string
+          enum: [tesla-fleet-api, demo]
