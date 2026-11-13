@@ -72,12 +72,36 @@ export function statusPage(state: State, env: Env, origin: string): string {
   p { margin: 0 0 12px; max-width: 66ch; }
   .lede { color: var(--mute); font-size: 1.05rem; }
   .badge { display:inline-block; font-size:.75rem; letter-spacing:.06em; text-transform:uppercase; color:var(--accent); border:1px solid var(--accent); border-radius:999px; padding:2px 10px; }
-  .flow { display:grid; grid-template-columns: repeat(4, 1fr); gap:10px; margin: 20px 0 6px; padding:0; list-style:none; counter-reset: step; }
-  .flow li { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px; counter-increment: step; }
-  .flow li::before { content: counter(step); display:block; color:var(--accent); font-weight:600; font-size:.85rem; }
-  .flow b { display:block; }
-  .flow span { color:var(--mute); font-size:.88rem; }
-  @media (max-width: 640px) { .flow { grid-template-columns: 1fr 1fr; } }
+  .diagram, .fan { display:flex; align-items:stretch; gap:6px; margin:18px 0 8px; }
+  .fan { margin-bottom:22px; }
+  .zone { flex:1 1 0; display:flex; align-items:stretch; gap:6px; border:1.5px dashed var(--line); border-radius:12px; padding:26px 8px 8px; position:relative; min-width:0; }
+  .zone.wide { flex:2.5 1 0; }
+  .zt { position:absolute; top:6px; left:10px; font-size:.7rem; letter-spacing:.06em; text-transform:uppercase; color:var(--mute); white-space:nowrap; }
+  .node { flex:1 1 0; min-width:0; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
+  .node.hi { border-color:var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .node b { display:block; font-size:.95rem; }
+  .node span { display:block; color:var(--mute); font-size:.82rem; line-height:1.35; }
+  .arrow { flex:0 0 74px; position:relative; align-self:center; text-align:center; font-size:.72rem; line-height:1.25; color:var(--mute); padding:0 2px 14px; }
+  .arrow::before { content:""; position:absolute; left:2px; right:7px; bottom:5px; border-top:2px solid var(--accent); }
+  .arrow::after { content:""; position:absolute; right:1px; bottom:1px; border:5px solid transparent; border-left:7px solid var(--accent); border-right:0; }
+  .clients { flex:1.3 1 0; display:flex; flex-direction:column; gap:6px; padding-right:12px; border-right:2px solid var(--accent); border-radius:0 10px 10px 0; min-width:0; }
+  .fan .node { display:flex; flex-direction:column; justify-content:center; }
+  .fan .clients .node { flex:0 0 auto; }
+  .note { color:var(--mute); font-size:.9rem; }
+  .ways { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:14px 0 12px; }
+  .ways .node span { font-size:.9rem; }
+  .ways .tag { display:inline-block; margin-top:6px; font-size:.72rem; letter-spacing:.05em; text-transform:uppercase; color:var(--accent); }
+  ol.steps { margin:0 0 12px; padding-left:1.3em; max-width:66ch; }
+  ol.steps li { margin-bottom:4px; }
+  @media (max-width: 720px) {
+    .diagram, .fan, .zone { flex-direction:column; }
+    .zone { padding:28px 8px 8px; }
+    .arrow { flex:0 0 auto; align-self:stretch; min-height:40px; display:flex; align-items:center; text-align:left; padding:0 0 0 30px; }
+    .arrow::before { left:12px; right:auto; top:3px; bottom:8px; border-top:0; border-left:2px solid var(--accent); }
+    .arrow::after { left:8px; right:auto; bottom:2px; border:5px solid transparent; border-top:7px solid var(--accent); border-bottom:0; }
+    .clients { padding:0 0 12px; border-right:0; border-bottom:2px solid var(--accent); border-radius:0 0 10px 10px; }
+    .ways { grid-template-columns:1fr; }
+  }
   pre { background:var(--code); border:1px solid var(--line); border-radius:10px; padding:14px 16px; overflow-x:auto; font:13.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; margin:0 0 12px; }
   code { font:13.5px ui-monospace,SFMono-Regular,Menlo,monospace; }
   .scroll { overflow-x:auto; background:var(--card); border:1px solid var(--line); border-radius:10px; }
@@ -94,14 +118,25 @@ export function statusPage(state: State, env: Env, origin: string): string {
 <main>
   <span class="badge">Demo &middot; simulated charger</span>
   <h1>A private charger that reports every session to MeronRG</h1>
-  <p class="lede">After each charging session, one small message goes to the operator's API: when it started, when it ended, how many kWh, and the running meter total. Nothing is installed on the building's network.</p>
+  <p class="lede">After each charging session, one small message goes to the operator's API: when it started, when it ended, how many kWh, and the running meter total.</p>
 
-  <ol class="flow">
-    <li><b>Charger</b><span>Tesla Wall Connector Gen 3 measures the session</span></li>
-    <li><b>Tesla cloud</b><span>The charger reports there by itself</span></li>
-    <li><b>Bridge</b><span>Checks once an hour for finished sessions</span></li>
-    <li><b>MeronRG API</b><span>Receives one HTTPS POST per session</span></li>
-  </ol>
+  <h2>How it works</h2>
+  <div class="diagram" role="img" aria-label="The charger reports to Tesla's cloud. The bridge reads the finished sessions every hour and posts each one to the MeronRG API.">
+    <div class="zone"><span class="zt">Garage</span>
+      <div class="node"><b>Charger</b><span>Tesla Wall Connector Gen 3 measures each session</span></div>
+    </div>
+    <div class="arrow"><span>reports by itself</span></div>
+    <div class="zone wide"><span class="zt">Internet</span>
+      <div class="node"><b>Tesla cloud</b><span>Keeps the charging history</span></div>
+      <div class="arrow"><span>read every hour</span></div>
+      <div class="node hi"><b>Bridge</b><span>Finds finished sessions, sends each one once</span></div>
+    </div>
+    <div class="arrow"><span>HTTPS POST per session</span></div>
+    <div class="zone"><span class="zt">MeronRG</span>
+      <div class="node"><b>MeronRG API</b><span>Receives the session, bills as usual</span></div>
+    </div>
+  </div>
+  <p class="note">Nothing is installed on the building's network and nothing connects in to it. The charger only needs ordinary internet access, and MeronRG only needs one address that accepts the message below.</p>
 
   <h2>The message MeronRG receives</h2>
   <pre>POST /v1/readings
@@ -121,6 +156,34 @@ ${esc(body)}</pre>
   </table></div>`
       : `<p>No sessions yet. The first hourly run fills this in.</p>`
   }
+
+  <h2>Reusing it for other residents</h2>
+  <p>MeronRG builds the receiving address once. Every resident who wants to use their own charger then sends the same message to the same address, with their own key.</p>
+  <div class="fan" role="img" aria-label="Several residents, each with their own key, post the same message to one MeronRG address, which feeds billing.">
+    <div class="clients">
+      <div class="node"><b>Resident A</b><span>Tesla Wall Connector &middot; key A</span></div>
+      <div class="node"><b>Resident B</b><span>Tesla Wall Connector &middot; key B</span></div>
+      <div class="node"><b>Resident C</b><span>Another charger brand &middot; key C</span></div>
+    </div>
+    <div class="arrow"><span>same message, same address</span></div>
+    <div class="node hi"><b>MeronRG API</b><span>Built once. The key and <code>charger_id</code> say whose session it is.</span></div>
+    <div class="arrow"><span>per customer</span></div>
+    <div class="node"><b>Billing</b><span>As for any other charge point</span></div>
+  </div>
+
+  <p><b>Adding a resident</b></p>
+  <ol class="steps">
+    <li>MeronRG issues a key and a <code>charger_id</code> for the resident.</li>
+    <li>A bridge is pointed at that resident's charger with that key.</li>
+    <li>Sessions start arriving. Withdrawing the key stops them.</li>
+  </ol>
+
+  <p><b>Two ways to run the bridge</b></p>
+  <div class="ways">
+    <div class="node"><b>Each resident runs their own</b><span>What this demo does. The code is public: copy it, add the key from MeronRG, deploy it on a free cloud account. Suits a technically minded resident, who also registers with Tesla as a developer.</span><span class="tag">Built &middot; awaiting a real charger</span></div>
+    <div class="node"><b>MeronRG runs one for everyone</b><span>One bridge and one registration with Tesla. Each resident approves access once with their Tesla login, and MeronRG's bridge reads all the chargers. The same code with a list of chargers in place of one.</span><span class="tag">Not built yet</span></div>
+  </div>
+  <p class="note">A different charger brand changes only the part that reads the charger. The message MeronRG receives stays the same.</p>
 
   <h2>Try the receiving side</h2>
   <p>This demo includes a stand-in for the MeronRG endpoint. It checks the key and the fields and answers the way the proposal describes.</p>

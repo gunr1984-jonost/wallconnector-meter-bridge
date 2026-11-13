@@ -72,6 +72,35 @@ The full specification is in [`docs/openapi.yaml`](docs/openapi.yaml).
 If MeronRG would rather collect the data than receive it, the bridge can expose the same
 figures at an address MeronRG reads with a key. Same data, opposite direction.
 
+## Reusing it for other residents
+
+MeronRG builds the receiving address once. Every resident who wants to use their own charger
+then sends the same message to the same address, with their own key.
+
+```mermaid
+flowchart LR
+  A["Resident A<br/>Tesla Wall Connector, key A"] --> M
+  B["Resident B<br/>Tesla Wall Connector, key B"] --> M
+  C["Resident C<br/>another charger brand, key C"] --> M
+  M["MeronRG API<br/>built once: the key and charger_id<br/>say whose session it is"] --> X["Billing<br/>as for any other charge point"]
+```
+
+Adding a resident:
+
+1. MeronRG issues a key and a `charger_id` for the resident.
+2. A bridge is pointed at that resident's charger with that key.
+3. Sessions start arriving. Withdrawing the key stops them.
+
+Two ways to run the bridge:
+
+| | How | State |
+|---|---|---|
+| **Each resident runs their own** | What this repository does. Copy it, add the key from MeronRG, deploy it on a free Cloudflare account. Suits a technically minded resident, who also registers with Tesla as a developer. | Built; the Tesla side awaits a real charger. |
+| **MeronRG runs one for everyone** | One bridge and one registration with Tesla. Each resident approves access once with their Tesla login, and MeronRG's bridge reads all the chargers. The same code with a list of chargers in place of one. | Not built yet. |
+
+A different charger brand changes only the part that reads the charger
+([`src/tesla.ts`](src/tesla.ts)). The message MeronRG receives stays the same.
+
 ## Where the figures come from
 
 - Energy is measured by the Wall Connector's built-in meter and read from Tesla's own
