@@ -194,7 +194,7 @@ describe("bridge cycle", () => {
 
   it("refuses to send the key anywhere but https", async () => {
     const { store } = fakeStore();
-    const c = cfg({ MERONRG_API_URL: "http://api.example/readings", MERONRG_API_KEY: "k" });
+    const c = cfg({ MODE: "live", MERONRG_API_URL: "http://api.example/readings", MERONRG_API_KEY: "k" });
     const state = await runCycle(c, store, NOW, { source: async () => [A], send: ok });
     expect(state.last_error).toContain("https://");
     expect(state.delivered_count).toBe(0);
@@ -215,6 +215,164 @@ describe("bridge cycle", () => {
     expect(alerts.map((a) => a.status)).toEqual(["failing"]); // once, not every hour
     await runCycle(c, store, NOW + 2 * HOUR, { source: async () => [A], send: ok, fetch: fetchFn });
     expect(alerts.map((a) => a.status)).toEqual(["failing", "recovered"]);
+  });
+
+  it("does not lose early sessions when the first good run comes weeks late", async () => {
+    const start = Date.parse("2026-12-01T00:00:00Z");
+    const early = session("2026-12-01T18:00:00Z", 2, 12_000);
+    for (const c of [cfg({ REPORT_FROM: "2026-12-01T00:00:00Z" }), cfg()]) {
+      const { store } = fakeStore();
+      const broken = async () => {
+        throw new Error("Tesla charge history failed: HTTP 500");
+      };
+      for (let h = 0; h < 24 * 20; h += 24) await runCycle(c, store, start + h * HOUR, { source: broken, send: ok });
+      const asked: number[] = [];
+      const state = await runCycle(c, store, start + 20 * DAY, {
+        source: async (from) => (asked.push(from), [early]),
+        send: ok,
+      });
+      expect(asked[0]).toBeLessThanOrEqual(start); // still asks from the very beginning
+      expect(state.delivered_count).toBe(1);
+    }
+  });
+
+  it("delivers a session longer than the look-back window, and one that began before it", async () => {
+    const { store } = fakeStore();
+    await runCycle(cfg(), store, NOW - 9 * DAY, { source: async () => [], send: ok });
+    const long = session(new Date(NOW - 8.5 * DAY).toISOString(), 8 * 24, 60_000); // 8 days, ends 12 h ago
+    const state = await runCycle(cfg(), store, NOW, { source: async () => [long], send: ok });
+    expect(state.delivered_count).toBe(1);
+  });
+
+  it("resends an unconfirmed reading unchanged, so one id never carries two totals", async () => {
+    const { store } = fakeStore();
+    const bodies: Reading[] = [];
+    let timeout = true;
+    const send = async (r: Request) => {
+      bodies.push((await r.json()) as Reading);
+      if (timeout) throw new Error("The operation was aborted due to timeout");
+      return new Response(null, { status: 201 });
+    };
+    // Run 1: B is sent, the operator stores it, but the answer never arrives.
+    let state = await runCycle(cfg(), store, NOW, { source: async () => [B], send });
+    expect(state.last_error).toBe("operator did not answer for TEST-1-20261112T180000Z (timeout or network error)");
+    expect(state.delivered_count).toBe(0);
+    // Run 2: the older session A is now listed too.
+    timeout = false;
+    state = await runCycle(cfg(), store, NOW + HOUR, { source: async () => [A, B], send });
+    expect(bodies.map((b) => [b.reading_id, b.meter_total_wh])).toEqual([
+      ["TEST-1-20261112T180000Z", 8_000],
+      ["TEST-1-20261112T180000Z", 8_000], // identical resend
+      ["TEST-1-20261111T180000Z", 23_000],
+    ]);
+    expect(state.meter_total_wh).toBe(23_000);
+    expect(state.pending).toBeNull();
+  });
+
+  it("lets the owner skip a session that blocks delivery", async () => {
+    const { store } = fakeStore();
+    const impossible = session("2026-11-12T22:00:00Z", 1, 90_000);
+    let state = await runCycle(cfg(), store, NOW, { source: async () => [impossible, B], send: ok });
+    expect(state.delivered_count).toBe(0);
+    expect(state.last_error).toContain("2026-11-12T22:00:00.000Z");
+    state = await runCycle(cfg({ SKIP_SESSIONS: "2026-11-12T22:00:00Z" }), store, NOW + HOUR, {
+      source: async () => [impossible, B],
+      send: ok,
+    });
+    expect(state.last_error).toBeNull();
+    expect(state.deliveries.map((d) => d.reading.session.started_at)).toEqual([B.started_at]);
+
+    // The same switch drops a reading the operator keeps refusing.
+    const s2 = fakeStore().store;
+    const refuse = async () => new Response(null, { status: 422 });
+    await runCycle(cfg(), s2, NOW, { source: async () => [A, B], send: refuse });
+    state = await runCycle(cfg({ SKIP_SESSIONS: A.started_at }), s2, NOW + HOUR, { source: async () => [A, B], send: ok });
+    expect(state.deliveries.map((d) => d.reading.session.started_at)).toEqual([B.started_at]);
+    expect(state.meter_total_wh).toBe(8_000);
+  });
+
+  it("fails loudly on a half-configured bridge instead of guessing", async () => {
+    const source = async () => [A];
+    let sent = 0;
+    const send = async () => (sent++, new Response(null, { status: 201 }));
+    // Live without an address must not quietly deliver to the stand-in.
+    let state = await runCycle(cfg({ MODE: "live" }), fakeStore().store, NOW, { source, send });
+    expect(state.last_error).toContain("MERONRG_API_URL is not set");
+    expect(state.watermark).toBeNull();
+    // A misspelt mode is an error, not the demo.
+    state = await runCycle(cfg({ MODE: "Live" }), fakeStore().store, NOW, { source, send });
+    expect(state.last_error).toContain("MODE must be");
+    expect(sent).toBe(0);
+  });
+
+  it("waits quietly when REPORT_FROM is still in the future", async () => {
+    let asked = 0;
+    const state = await runCycle(cfg({ REPORT_FROM: "2027-01-01T00:00:00Z" }), fakeStore().store, NOW, {
+      source: async () => (asked++, []),
+      send: ok,
+    });
+    expect(asked).toBe(0);
+    expect(state.last_error).toBeNull();
+  });
+
+  it("delivers every session exactly once over weeks of random failures and late listings", async () => {
+    // Deterministic pseudo-random numbers, so a failure can be reproduced.
+    let seed = 42;
+    const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0), seed / 2 ** 32);
+    const t0 = Date.parse("2026-10-01T00:00:00Z");
+    const all = Array.from({ length: 60 }, (_, d) => session(new Date(t0 + d * DAY + 18 * HOUR).toISOString(), 2, 10_000 + d));
+    const visibleAt = new Map(all.map((s) => [s.started_at, Date.parse(s.ended_at) + rnd() * 5 * DAY])); // listed up to 5 days late
+    const { store } = fakeStore();
+    const received = new Map<string, number>();
+    const totals: number[] = [];
+    let state!: State;
+    for (let now = t0 + 7 * DAY; now <= t0 + 75 * DAY; now += HOUR) {
+      const sourceDown = rnd() < 0.15;
+      state = await runCycle(cfg(), store, now, {
+        source: async (from, to) => {
+          if (sourceDown) throw new Error("Tesla charge history failed: HTTP 500");
+          return all.filter((s) => visibleAt.get(s.started_at)! <= now && Date.parse(s.ended_at) >= from - DAY && Date.parse(s.started_at) <= to);
+        },
+        send: async (r) => {
+          const lost = rnd() < 0.1; // accepted, but the answer is lost
+          if (rnd() < 0.15) return new Response(null, { status: 503 });
+          const b = (await r.json()) as Reading;
+          if (!received.has(b.reading_id)) totals.push(b.meter_total_wh);
+          received.set(b.reading_id, b.meter_total_wh);
+          if (lost) throw new Error("timeout");
+          return new Response(null, { status: 201 });
+        },
+      });
+    }
+    expect(received.size).toBe(60);
+    expect(state.delivered_count).toBe(60);
+    expect(state.meter_total_wh).toBe(all.reduce((sum, s) => sum + s.energy_wh, 0));
+    expect([...totals].sort((a, b) => a - b)).toEqual(totals); // the register only ever goes up
+    expect(state.recent.length).toBeLessThan(20); // old ids are forgotten
+  });
+
+  it("repeats the alert about once a day and survives a broken alert address", async () => {
+    const { store } = fakeStore();
+    let alerts = 0;
+    const fetchFn = (async () => (alerts++, new Response(null, { status: 204 }))) as unknown as typeof fetch;
+    const down = async () => new Response(null, { status: 500 });
+    const c = cfg({ ALERT_WEBHOOK_URL: "https://alerts.example/hook" });
+    for (let h = 0; h < 25; h++) await runCycle(c, store, NOW + h * HOUR, { source: async () => [A], send: down, fetch: fetchFn });
+    expect(alerts).toBe(2); // first failure, then the 24th
+
+    const never = (async () => {
+      throw new Error("alert address is down");
+    }) as unknown as typeof fetch;
+    const state = await runCycle(c, fakeStore().store, NOW, { source: async () => [A], send: down, fetch: never });
+    expect(state.last_error).toContain("500"); // the run still records its own error
+    let called = 0;
+    const plain = cfg({ ALERT_WEBHOOK_URL: "http://alerts.example/hook" });
+    await runCycle(plain, fakeStore().store, NOW, {
+      source: async () => [A],
+      send: down,
+      fetch: (async () => (called++, new Response(null))) as unknown as typeof fetch,
+    });
+    expect(called).toBe(0); // never over plain http
   });
 
   it("runs end to end in demo mode against the stand-in receiver", async () => {
@@ -242,7 +400,13 @@ describe("message to the operator", () => {
 
   it("needs a key for a real endpoint", () => {
     const reading = { reading_id: "x", charger_id: "x", session: A, meter_total_wh: 1, source: "demo" } as Reading;
-    expect(() => buildDeliveryRequest(reading, cfg({ MERONRG_API_URL: "https://api.example/r" }))).toThrow(/API_KEY/);
+    const live = { MODE: "live", MERONRG_API_URL: "https://api.example/r" };
+    expect(() => buildDeliveryRequest(reading, cfg(live))).toThrow(/API_KEY/);
+    expect(() => buildDeliveryRequest(reading, cfg({ MODE: "live" }))).toThrow(/API_URL/);
+    // Demo never uses a real address or key, even if they are configured.
+    const demo = buildDeliveryRequest(reading, cfg({ MERONRG_API_URL: "https://api.example/r", MERONRG_API_KEY: "real" }));
+    expect(new URL(demo.url).hostname).toBe("bridge.invalid");
+    expect(demo.headers.get("authorization")).toBe(`Bearer ${DEMO_API_KEY}`);
   });
 });
 
@@ -314,6 +478,14 @@ describe("worker routes", () => {
     expect((await call(env, MOCK_PATH, { method: "POST" })).status).toBe(404);
   });
 
+  it("treats a misspelt mode as private, not as the demo", async () => {
+    const { env } = workerEnv({ MODE: "Live", STATUS_TOKEN: "s3" });
+    expect(await (await call(env, "/")).text()).toBe("wallconnector-meter-bridge: running\n");
+    expect((await call(env, "/api/status")).status).toBe(401);
+    expect((await call(env, "/run", { method: "POST" })).status).toBe(404);
+    expect((await call(env, "/test-alert", { method: "POST" })).status).toBe(404);
+  });
+
   it("reports health without revealing data", async () => {
     const { env, instance } = workerEnv();
     expect((await call(env, "/health")).status).toBe(503); // no run yet
@@ -347,8 +519,10 @@ describe("demo page", () => {
     const state: State = {
       delivered_count: 1,
       meter_total_wh: 1,
+      origin: null,
       watermark: null,
       recent: [],
+      pending: null,
       deliveries: [
         {
           reading: { reading_id: evil, charger_id: evil, session: A, meter_total_wh: 1, source: "demo" },
@@ -407,6 +581,35 @@ describe("tesla source", () => {
     // Second call inside the token's lifetime: no new refresh.
     await teslaSessions(c, store, NOW - DAY, NOW, fetchFn, NOW + HOUR);
     expect(calls.filter((u) => u.includes("/token"))).toHaveLength(1);
+  });
+
+  it("uses the rotated token on expiry, and a newly configured one when the owner authorises again", async () => {
+    const { store } = fakeStore();
+    const base = { MODE: "live", TESLA_CLIENT_ID: "cid", TESLA_ENERGY_SITE_ID: "42" };
+    const used: string[] = [];
+    let n = 0;
+    let refuse = false;
+    const fetchFn = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes("/oauth2/v3/token")) {
+        used.push(new URLSearchParams(String(init?.body)).get("refresh_token")!);
+        if (refuse) return new Response(null, { status: 401 });
+        return Response.json({ access_token: `at${++n}`, refresh_token: `rotated${n}`, expires_in: 3_600 });
+      }
+      return Response.json({ response: { charge_history: [] } });
+    }) as typeof fetch;
+    const seed1 = cfg({ ...base, TESLA_REFRESH_TOKEN: "seed-1" });
+
+    await teslaSessions(seed1, store, 0, 1, fetchFn, NOW);
+    await teslaSessions(seed1, store, 0, 1, fetchFn, NOW + 2 * HOUR); // expired: rotated token, not the seed
+    expect(used).toEqual(["seed-1", "rotated1"]);
+
+    // Tesla now refuses the stored token: the error is visible and nothing is overwritten.
+    refuse = true;
+    await expect(teslaSessions(seed1, store, 0, 1, fetchFn, NOW + 4 * HOUR)).rejects.toThrow(/token refresh failed: HTTP 401/);
+    // The owner authorises again and sets a new seed: it must win over the dead stored token.
+    refuse = false;
+    await teslaSessions(cfg({ ...base, TESLA_REFRESH_TOKEN: "seed-2" }), store, 0, 1, fetchFn, NOW + 5 * HOUR);
+    expect(used.at(-1)).toBe("seed-2");
   });
 
   it("only ever talks to Tesla, with a numeric site id", async () => {

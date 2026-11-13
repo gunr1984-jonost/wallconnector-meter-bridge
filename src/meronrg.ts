@@ -19,10 +19,13 @@ export function readingId(chargerId: string, startedAt: string): string {
 }
 
 export function buildDeliveryRequest(reading: Reading, cfg: Config): Request {
-  const url = new URL(cfg.MERONRG_API_URL ?? `https://bridge.invalid${MOCK_PATH}`);
+  // Demo always talks to the built-in stand-in, whatever else is configured.
+  const demo = cfg.MODE === "demo";
+  if (!demo && !cfg.MERONRG_API_URL) throw new Error("MERONRG_API_URL is not set");
+  const url = new URL(demo ? `https://bridge.invalid${MOCK_PATH}` : cfg.MERONRG_API_URL!);
   // The key must never travel unencrypted.
   if (url.protocol !== "https:") throw new Error("MERONRG_API_URL must start with https://");
-  const key = cfg.MERONRG_API_URL ? cfg.MERONRG_API_KEY : DEMO_API_KEY;
+  const key = demo ? DEMO_API_KEY : cfg.MERONRG_API_KEY;
   if (!key) throw new Error("MERONRG_API_KEY is not set");
 
   return new Request(url, {

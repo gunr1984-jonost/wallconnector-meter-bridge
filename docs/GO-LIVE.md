@@ -64,6 +64,9 @@ Run `wrangler` from the project folder, never from the home folder.
 `CHARGER_ID` is part of every reading id. Set it once and never change it: a different
 value would make MeronRG see old sessions as new ones.
 
+`MODE` must be exactly `live`. A missing address or a misspelt mode stops the bridge with a
+clear error; it never falls back to the demo.
+
 `REPORT_FROM` is the moment billing through the bridge starts. Sessions that began before
 it are never reported. Without it, the first run reports the previous 7 days.
 
@@ -85,8 +88,8 @@ These are the assumptions that could not be tested without a charger:
 - [ ] `meter_total_wh` tracks the charger's own lifetime counter (`energy_wh` at
       `http://<charger address>/api/1/lifetime`, readable from the same network).
 - [ ] Tesla API usage stays inside the account's monthly allowance (one call an hour, about 720 a month).
-- [ ] `/health` answers `ok`, and a test alert arrives: set a wrong `MERONRG_API_KEY` for one
-      hour, confirm the failure notice, set the right key, confirm the recovery notice.
+- [ ] `/health` answers `ok`, and a test alert arrives: `POST /test-alert` with the status
+      token answers `{"sent":true}` and the notice shows up at the alert address.
 
 ## 6. Before relying on it for billing
 

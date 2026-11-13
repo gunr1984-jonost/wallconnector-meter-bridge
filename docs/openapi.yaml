@@ -19,8 +19,8 @@ paths:
       parameters:
         - name: Idempotency-Key
           in: header
-          required: true
-          description: Same value as reading_id. A retry repeats it.
+          required: false
+          description: Always sent by the bridge, with the same value as reading_id. A receiver may use either one to drop repeats.
           schema: { type: string }
       requestBody:
         required: true

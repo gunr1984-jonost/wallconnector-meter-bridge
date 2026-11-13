@@ -7,6 +7,8 @@ export interface Config {
   TIME_ZONE: string;
   /** Optional ISO date-time: sessions that started before it are never reported. */
   REPORT_FROM?: string;
+  /** Optional, comma-separated session start times the owner has decided to leave out. */
+  SKIP_SESSIONS?: string;
 
   // Operator side (live mode)
   MERONRG_API_URL?: string;
@@ -57,10 +59,14 @@ export interface Delivery {
 export interface State {
   delivered_count: number;
   meter_total_wh: number;
-  /** Every session that ended before this moment has been delivered. */
+  /** Where reporting starts. Fixed at the first attempt and never moved. */
+  origin: string | null;
+  /** The end of the last window that was delivered in full. The next run starts a week before it. */
   watermark: string | null;
-  /** started_at of sessions delivered inside the look-back window, to never send one twice. */
-  recent: string[];
+  /** Start and end of sessions delivered inside the look-back window, to never send one twice. */
+  recent: { s: string; e: string }[];
+  /** A reading that has been sent but not yet confirmed. It is resent unchanged. */
+  pending: Reading | null;
   deliveries: Delivery[]; // newest first, capped
   last_attempt_at: string | null;
   last_success_at: string | null;

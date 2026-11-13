@@ -22,9 +22,18 @@ No secret is in this repository. GitHub secret scanning and push protection are 
   run at a time. A second trigger joins the run in progress. Each accepted reading is saved
   before the next is sent.
 - **No double counting, no gaps.** A reading's id is built from the charger id and the
-  session start, so it is identical on every retry, even after a full reset of the bridge.
-  Each run looks two days behind its own high-water mark, so a session Tesla lists late is
-  still delivered, once. After an outage of any length the bridge resumes where it stopped.
+  session start, so it is identical on every retry. A reading that was sent but not
+  confirmed is resent unchanged before anything else, so one id never carries two totals.
+  Each run looks a week behind its own high-water mark, so a session Tesla lists up to a
+  week late is still delivered, once. The start of reporting is fixed at the first attempt,
+  so after an outage of any length, including one right at the start, the bridge resumes
+  where it stopped.
+- **A reset is visible, not silent.** If the bridge's storage were ever wiped, ids stay the
+  same (MeronRG ignores the repeats) but the running total starts again from zero. Agree
+  the new base with MeronRG if that ever happens.
+- **Half-configured means stopped.** The mode must be exactly `demo` or `live`. Live without
+  an operator address, or a misspelt mode, is an error and is treated as private; real
+  sessions can never go to the stand-in, and simulated ones can never go to MeronRG.
 - **Bad data is not billed.** A session with an end before its start, a negative amount, or
   more energy than the charger can physically deliver stops the run and raises an alert.
 - **Nothing private is public.** In live operation the page shows no data; status needs the
@@ -54,17 +63,19 @@ No secret is in this repository. GitHub secret scanning and push protection are 
 | What is it doing? | `GET /api/status` with `Authorization: Bearer <STATUS_TOKEN>`: last attempt, last success, last error, recent deliveries. |
 | Tell me when it breaks | Set `ALERT_WEBHOOK_URL`. It receives a JSON notice on the first failed run, once a day while it keeps failing, and on recovery. |
 | Run it now | `POST /run` with the status token. |
+| Prove alerts arrive | `POST /test-alert` with the status token sends a test notice. |
 
 ### When something fails
 
 | `last_error` says | Meaning | Action |
 |---|---|---|
 | `operator answered HTTP 401/403` | Key rejected | Get a new key from MeronRG; `wrangler secret put MERONRG_API_KEY`. Nothing is lost: delivery resumes from the same session. |
-| `operator answered HTTP 4xx` (other) | MeronRG refuses this reading | Compare the message with their API; fix `src/meronrg.ts`. Later sessions wait behind it, in order. |
-| `operator answered HTTP 5xx` or a timeout | MeronRG is down | Nothing. It retries every hour. |
-| `Tesla token refresh failed` | Authorisation expired or withdrawn | Authorise again (GO-LIVE step 2) and set a new `TESLA_REFRESH_TOKEN`. |
+| `operator answered HTTP 4xx` (other) | MeronRG refuses this reading | Compare the message with their API; fix `src/meronrg.ts`. Later sessions wait behind it, in order. If the two sides agree that one session is to be left out, list its start time in `SKIP_SESSIONS`. |
+| `operator answered HTTP 5xx`, or `operator did not answer` | MeronRG is down or unreachable | Nothing. It retries every hour, with the identical message. |
+| `Tesla token refresh failed` | Authorisation expired or withdrawn | Authorise again (GO-LIVE step 2) and set the new `TESLA_REFRESH_TOKEN`. A newly set token replaces the stored one. |
 | `Tesla charge history failed: HTTP 429/5xx` | Tesla is busy or down | Nothing. It retries every hour. |
-| `charger data: ...` | Tesla returned figures that cannot be right | Look at the session in the Tesla app before anything is billed. |
+| `charger data: ...` | Tesla returned figures that cannot be right; the message names the session | Look at the session in the Tesla app before anything is billed. Delivery waits. To leave that session out and continue, add its start time to `SKIP_SESSIONS` (comma-separated) and deploy. |
+| `MODE must be ...`, `... is not set` | A setting is missing or misspelt | Fix the setting. Nothing was sent. |
 
 ### Routine
 

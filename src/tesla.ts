@@ -21,6 +21,13 @@ interface StoredToken {
   access_token: string;
   refresh_token: string;
   expires_at: number; // ms
+  /** Which configured TESLA_REFRESH_TOKEN this chain of tokens started from. */
+  seed_fp: string | null;
+}
+
+async function fingerprint(secret: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(secret));
+  return [...new Uint8Array(digest).slice(0, 8)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 type Fetch = typeof fetch;
@@ -35,11 +42,14 @@ function apiBase(cfg: Config): URL {
 
 async function accessToken(cfg: Config, store: Store, fetchFn: Fetch, now: number): Promise<string> {
   const stored = await store.get<StoredToken>(TOKEN_KEY);
-  if (stored && stored.expires_at - 60_000 > now) return stored.access_token;
+  // A newly configured TESLA_REFRESH_TOKEN (after authorising again) replaces what is stored.
+  const seedFp = cfg.TESLA_REFRESH_TOKEN ? await fingerprint(cfg.TESLA_REFRESH_TOKEN) : null;
+  const reseeded = seedFp !== null && stored?.seed_fp !== seedFp;
+  if (stored && !reseeded && stored.expires_at - 60_000 > now) return stored.access_token;
 
   // Tesla rotates the refresh token on every use, so the newest one is kept in storage.
   // The bridge runs one cycle at a time, so a refresh token is never used twice.
-  const refresh = stored?.refresh_token ?? cfg.TESLA_REFRESH_TOKEN;
+  const refresh = reseeded ? cfg.TESLA_REFRESH_TOKEN : stored?.refresh_token;
   if (!refresh || !cfg.TESLA_CLIENT_ID) {
     throw new Error("Tesla is not authorised yet: set TESLA_CLIENT_ID and TESLA_REFRESH_TOKEN");
   }
@@ -63,6 +73,7 @@ async function accessToken(cfg: Config, store: Store, fetchFn: Fetch, now: numbe
     access_token: body.access_token,
     refresh_token: typeof body.refresh_token === "string" ? body.refresh_token : refresh,
     expires_at: now + body.expires_in * 1000,
+    seed_fp: reseeded ? seedFp : (stored?.seed_fp ?? null),
   };
   await store.put(TOKEN_KEY, token);
   return token.access_token;

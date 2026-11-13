@@ -1,5 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
-import { isHealthy, isLive, loadState, runCycle } from "./bridge";
+import { isDemo, isHealthy, loadState, notify, runCycle } from "./bridge";
 import { MOCK_PATH } from "./meronrg";
 import { mockReceiver } from "./mock";
 import { statusPage } from "./page";
@@ -72,8 +72,8 @@ async function sameSecret(given: string | null, expected: string | undefined): P
 
 export default {
   // Once an hour: post any charging session the operator has not seen yet.
-  async scheduled(_controller, env, ctx) {
-    ctx.waitUntil(bridge(env).run());
+  async scheduled(_controller, env) {
+    await bridge(env).run();
   },
 
   async fetch(request, env) {
@@ -99,7 +99,7 @@ export default {
 
     if (pathname === "/api/status" && read) {
       // Real charging times say when someone is home, so live status needs the token.
-      if (isLive(env) && !authorised) return reply("unauthorised\n", 401);
+      if (!isDemo(env) && !authorised) return reply("unauthorised\n", 401);
       const state = await bridge(env).state();
       return replyJson({ healthy: isHealthy(state), ...state });
     }
@@ -110,7 +110,13 @@ export default {
       return replyJson({ delivered_count: state.delivered_count, last_error: state.last_error });
     }
 
-    if (isLive(env)) {
+    // Sends a test notice to the alert address, to prove alerts arrive.
+    if (pathname === "/test-alert" && request.method === "POST" && authorised) {
+      return replyJson({ sent: await notify(env, fetch, "test", null) });
+    }
+
+    // Anything that is not explicitly the demo is private.
+    if (!isDemo(env)) {
       return pathname === "/" && read ? reply("wallconnector-meter-bridge: running\n") : reply("not found\n", 404);
     }
 
