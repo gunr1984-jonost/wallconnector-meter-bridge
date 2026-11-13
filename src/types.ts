@@ -1,11 +1,12 @@
-export interface Env {
-  STATE: KVNamespace;
-
+/** Plain settings (wrangler vars and secrets). No bindings, so the core runs anywhere. */
+export interface Config {
   /** "demo" = simulated charger + built-in stand-in receiver. "live" = Tesla + the operator's API. */
   MODE: string;
   /** The identifier the operator knows this charger (or customer) by. */
   CHARGER_ID: string;
   TIME_ZONE: string;
+  /** Optional ISO date-time: sessions that started before it are never reported. */
+  REPORT_FROM?: string;
 
   // Operator side (live mode)
   MERONRG_API_URL?: string;
@@ -17,8 +18,16 @@ export interface Env {
   TESLA_ENERGY_SITE_ID?: string;
   TESLA_REFRESH_TOKEN?: string; // secret, used once to seed the stored token
 
-  /** Live mode only: bearer token that unlocks /api/status. */
+  /** Bearer token for /api/status (live) and POST /run. */
   STATUS_TOKEN?: string; // secret
+  /** Optional https address that is told when deliveries start failing and when they recover. */
+  ALERT_WEBHOOK_URL?: string; // secret
+}
+
+/** The bridge's own storage: strongly consistent, one writer (a Durable Object). */
+export interface Store {
+  get<T>(key: string): Promise<T | undefined>;
+  put<T>(key: string, value: T): Promise<void>;
 }
 
 /** One completed charging session, as measured by the charger. */
@@ -30,7 +39,8 @@ export interface Session {
 
 /** What the operator receives: one completed session plus the running meter total. */
 export interface Reading {
-  reading_id: string; // unique and stable: a retry repeats the same id
+  /** Derived from the charger and the session start, so it is the same on every retry, forever. */
+  reading_id: string;
   charger_id: string;
   session: Session;
   /** Sum of every session delivered so far, this one included. */
@@ -45,13 +55,17 @@ export interface Delivery {
 }
 
 export interface State {
-  seq: number;
+  delivered_count: number;
   meter_total_wh: number;
-  /** started_at of the last session the operator accepted. */
-  cursor: string | null;
+  /** Every session that ended before this moment has been delivered. */
+  watermark: string | null;
+  /** started_at of sessions delivered inside the look-back window, to never send one twice. */
+  recent: string[];
   deliveries: Delivery[]; // newest first, capped
-  updated_at: string | null;
+  last_attempt_at: string | null;
+  last_success_at: string | null;
   last_error: string | null;
+  consecutive_failures: number;
 }
 
 /** Where sessions come from. Demo and Tesla both implement this. */

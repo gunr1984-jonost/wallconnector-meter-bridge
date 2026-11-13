@@ -4,8 +4,9 @@ info:
   version: 0.1.0
   description: >
     Proposed receiving endpoint for charging sessions measured by a resident's own
-    Tesla Wall Connector Gen 3. One request per completed session. This is a proposal:
-    the sender adapts to whatever interface the operator already has.
+    Tesla Wall Connector Gen 3. One request per completed session. This is a starting
+    point, not a requirement: the sender is changed to fit whatever interface the operator
+    already has (address, authentication, field names, units, timing).
 servers:
   - url: https://wc-meter-bridge.gunr1984.workers.dev/mock/meronrg
     description: Stand-in receiver in the demo (key "demo-key"; requests are checked, not stored)
@@ -27,7 +28,7 @@ paths:
           application/json:
             schema: { $ref: "#/components/schemas/Reading" }
             example:
-              reading_id: WC3-0001-000005
+              reading_id: WC3-0001-20261112T170000Z
               charger_id: WC3-0001
               session:
                 started_at: "2026-11-12T17:00:00.000Z"
@@ -39,7 +40,7 @@ paths:
         "201":
           description: Accepted.
         "200":
-          description: Already received (same reading_id). Treated as accepted.
+          description: Already received (same reading_id). Treated as accepted. A repeat must answer 2xx, not 409.
         "401":
           description: Missing or wrong key. The sender retries hourly.
         "422":
@@ -57,7 +58,7 @@ components:
       properties:
         reading_id:
           type: string
-          description: Unique per session; stable across retries.
+          description: Unique per session (charger id plus session start, UTC); identical on every retry.
         charger_id:
           type: string
           description: Identifier the operator assigns to this charger or customer.

@@ -12,7 +12,9 @@
     "CHARGER_ID": "DEMO-WC3-001",
     "TIME_ZONE": "Asia/Jerusalem"
   },
-  "kv_namespaces": [{ "binding": "STATE", "id": "a33d9fb54bfe4108afe0c0525efaa0ac" }]
+  // State lives in one Durable Object: strongly consistent, one run at a time.
+  "durable_objects": { "bindings": [{ "name": "BRIDGE", "class_name": "BridgeState" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["BridgeState"] }]
 
   // Going live is a second Worker with its own storage and secrets: see docs/GO-LIVE.md.
 }
